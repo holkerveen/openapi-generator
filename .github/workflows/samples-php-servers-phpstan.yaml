@@ -5,10 +5,12 @@ on:
     paths:
       - samples/server/petstore/php-laravel/**
       - samples/server/petstore/php-laravel-issue-21334/**
+      - samples/server/petstore/php-laravel-oneof-interfaces/**
   pull_request:
     paths:
       - samples/server/petstore/php-laravel/**
       - samples/server/petstore/php-laravel-issue-21334/**
+      - samples/server/petstore/php-laravel-oneof-interfaces/**
 jobs:
   build:
     name: Build 
@@ -24,6 +26,7 @@ jobs:
           # comment out due to errors
           #- samples/server/petstore/php-laravel/
           - samples/server/petstore/php-laravel-issue-21334/
+          - samples/server/petstore/php-laravel-oneof-interfaces/
     steps:
       - uses: actions/checkout@v7
       - name: Setup PHP with tools
