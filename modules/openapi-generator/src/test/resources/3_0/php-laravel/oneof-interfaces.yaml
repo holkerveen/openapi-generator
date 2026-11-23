@@ -1,0 +1,134 @@
+openapi: 3.0.3
+info:
+  title: php-laravel oneOf interfaces
+  version: 1.0.0
+paths:
+  /owners:
+    post:
+      operationId: createOwner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Owner'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Owner'
+  /pets:
+    get:
+      operationId: getPet
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+  /shapes:
+    post:
+      operationId: createShape
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Shape'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shape'
+components:
+  schemas:
+    Owner:
+      type: object
+      required:
+        - pet
+      properties:
+        pet:
+          oneOf:
+            - $ref: '#/components/schemas/Cat'
+            - $ref: '#/components/schemas/Dog'
+          discriminator:
+            propertyName: pet_type
+            mapping:
+              cat: '#/components/schemas/Cat'
+              dog: '#/components/schemas/Dog'
+        pets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Pet'
+        nickname:
+          oneOf:
+            - type: string
+            - type: number
+            - $ref: '#/components/schemas/Cat'
+    Pet:
+      oneOf:
+        - $ref: '#/components/schemas/Cat'
+        - $ref: '#/components/schemas/Dog'
+      discriminator:
+        propertyName: pet_type
+    Cat:
+      type: object
+      required:
+        - pet_type
+        - name
+      properties:
+        pet_type:
+          type: string
+        name:
+          type: string
+    Dog:
+      type: object
+      x-implements:
+        - java.io.Serializable
+      required:
+        - pet_type
+        - breed
+      properties:
+        pet_type:
+          type: string
+        breed:
+          type: string
+    ShapeKind:
+      type: string
+      enum:
+        - circle
+        - square
+    Shape:
+      oneOf:
+        - $ref: '#/components/schemas/Circle'
+        - $ref: '#/components/schemas/Square'
+      discriminator:
+        propertyName: kind
+        mapping:
+          circle: '#/components/schemas/Circle'
+          square: '#/components/schemas/Square'
+    Circle:
+      type: object
+      required:
+        - kind
+        - radius
+      properties:
+        kind:
+          $ref: '#/components/schemas/ShapeKind'
+        radius:
+          type: number
+    Square:
+      type: object
+      required:
+        - kind
+        - side
+      properties:
+        kind:
+          $ref: '#/components/schemas/ShapeKind'
+        side:
+          type: number

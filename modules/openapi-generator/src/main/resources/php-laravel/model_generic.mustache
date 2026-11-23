@@ -1,8 +1,25 @@
 use Crell\Serde\Renaming\Cases;
 use Crell\Serde\Attributes as Serde;
 
+{{#vendorExtensions.x-is-one-of-interface}}
+{{#discriminator}}
+{{#mappedModels}}
+{{#-first}}
+#[Serde\StaticTypeMap(key: '{{{propertyBaseName}}}', map: [
+{{/-first}}
+    '{{{mappingName}}}' => {{modelName}}::class,
+{{#-last}}
+])]
+{{/-last}}
+{{/mappedModels}}
+{{/discriminator}}
+interface {{classname}}
+{
+}
+{{/vendorExtensions.x-is-one-of-interface}}
+{{^vendorExtensions.x-is-one-of-interface}}
 #[Serde\ClassSettings(renameWith: Cases::snake_case)]
-class {{classname}}
+class {{classname}}{{#useOneOfInterfaces}}{{#vendorExtensions.x-implements}}{{#-first}} implements {{/-first}}{{{.}}}{{^-last}}, {{/-last}}{{/vendorExtensions.x-implements}}{{/useOneOfInterfaces}}
 {
     /**
     {{#vars}}
@@ -38,3 +55,4 @@ class {{classname}}
     {{/vars}}
     ) {}
 }
+{{/vendorExtensions.x-is-one-of-interface}}

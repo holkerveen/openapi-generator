@@ -9,9 +9,11 @@ import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import org.openapitools.codegen.CliOption;
 import org.openapitools.codegen.CodegenConfig;
+import org.openapitools.codegen.CodegenModel;
 import org.openapitools.codegen.CodegenType;
 import org.openapitools.codegen.SupportingFile;
 import org.openapitools.codegen.model.ModelMap;
+import org.openapitools.codegen.model.ModelsMap;
 import org.openapitools.codegen.model.OperationMap;
 import org.openapitools.codegen.model.OperationsMap;
 import org.openapitools.codegen.utils.ModelUtils;
@@ -19,10 +21,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+import static org.openapitools.codegen.CodegenConstants.X_IMPLEMENTS;
+import static org.openapitools.codegen.CodegenConstants.X_IS_ONE_OF_INTERFACE;
 import static org.openapitools.codegen.utils.StringUtils.camelize;
 
 /**
@@ -30,6 +39,7 @@ import static org.openapitools.codegen.utils.StringUtils.camelize;
  */
 public class PhpLaravelServerCodegen extends AbstractPhpCodegen implements CodegenConfig {
     private static final String AUTOWIRE = "autowire";
+    public static final String USE_ONE_OF_INTERFACES = "useOneOfInterfaces";
     private final Logger LOGGER = LoggerFactory.getLogger(PhpLaravelServerCodegen.class);
 
     public CodegenType getTag() {
@@ -81,12 +91,14 @@ public class PhpLaravelServerCodegen extends AbstractPhpCodegen implements Codeg
         languageSpecificPrimitives.add("\\Illuminate\\Http\\UploadedFile");
 
         cliOptions.add(new CliOption(AUTOWIRE, "Should autowire be enabled.").defaultValue("false"));
+        cliOptions.add(CliOption.newBoolean(USE_ONE_OF_INTERFACES, "Generate an interface for each oneOf schema with a discriminator, implemented by its member models and annotated with a crell/serde type map. oneOf schemas without a discriminator keep the default class model.", useOneOfInterfaces));
     }
 
     @Override
     public void processOpts() {
         super.processOpts();
 
+        convertPropertyToBooleanAndWriteBack(USE_ONE_OF_INTERFACES, this::setUseOneOfInterfaces);
         vendorExtensions.put("x-autowire", additionalProperties.getOrDefault(AUTOWIRE, "false").equals("true"));
 
         supportingFiles.add(new SupportingFile("routes.mustache", routesDirectory, routesFileName));
@@ -144,6 +156,47 @@ public class PhpLaravelServerCodegen extends AbstractPhpCodegen implements Codeg
                             .addMediaType("application/json", new MediaType().schema(new Schema<>().$ref(ref)));
                     apiResponse.setContent(forcedContent);
                 });
+    }
+
+    @Override
+    public Map<String, ModelsMap> postProcessAllModels(Map<String, ModelsMap> objs) {
+        Map<String, ModelsMap> result = super.postProcessAllModels(objs);
+        if (useOneOfInterfaces) {
+            keepOnlyDiscriminatedOneOfInterfaces(result);
+        }
+        return result;
+    }
+
+    private void keepOnlyDiscriminatedOneOfInterfaces(Map<String, ModelsMap> objs) {
+        List<CodegenModel> models = objs.values().stream()
+                .flatMap(modelsMap -> modelsMap.getModels().stream())
+                .map(ModelMap::getModel)
+                .collect(Collectors.toList());
+
+        Set<String> interfaces = new HashSet<>();
+        for (CodegenModel model : models) {
+            if (Boolean.TRUE.equals(model.vendorExtensions.get(X_IS_ONE_OF_INTERFACE))) {
+                if (model.discriminator == null) {
+                    model.vendorExtensions.remove(X_IS_ONE_OF_INTERFACE);
+                } else {
+                    interfaces.add(model.classname);
+                }
+            }
+        }
+
+        for (CodegenModel model : models) {
+            Object implemented = model.vendorExtensions.get(X_IMPLEMENTS);
+            if (implemented == null) {
+                continue;
+            }
+            Collection<?> declared = implemented instanceof Collection ? (Collection<?>) implemented : Collections.singletonList(implemented);
+            List<Object> retained = declared.stream().filter(interfaces::contains).collect(Collectors.toList());
+            if (retained.isEmpty()) {
+                model.vendorExtensions.remove(X_IMPLEMENTS);
+            } else {
+                model.vendorExtensions.put(X_IMPLEMENTS, retained);
+            }
+        }
     }
 
     @Override

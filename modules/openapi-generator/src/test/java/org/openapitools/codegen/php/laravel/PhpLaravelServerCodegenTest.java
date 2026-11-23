@@ -4,6 +4,7 @@ import org.openapitools.codegen.ClientOptInput;
 import org.openapitools.codegen.DefaultGenerator;
 import org.openapitools.codegen.TestUtils;
 import org.openapitools.codegen.config.CodegenConfigurator;
+import org.openapitools.codegen.languages.PhpLaravelServerCodegen;
 import org.testng.annotations.Test;
 
 import java.io.File;
@@ -12,6 +13,10 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertTrue;
 
 public class PhpLaravelServerCodegenTest {
 
@@ -68,5 +73,70 @@ public class PhpLaravelServerCodegenTest {
         TestUtils.assertFileContains(userController, "$user = $request->get('user');");
 
         output.deleteOnExit();
+    }
+
+    @Test
+    public void shouldParseUseOneOfInterfacesOptionDisabledByDefault() {
+        PhpLaravelServerCodegen codegen = new PhpLaravelServerCodegen();
+        codegen.processOpts();
+        assertFalse(codegen.getUseOneOfInterfaces());
+        assertTrue(codegen.cliOptions().stream().anyMatch(option -> option.getOpt().equals(PhpLaravelServerCodegen.USE_ONE_OF_INTERFACES)));
+
+        codegen = new PhpLaravelServerCodegen();
+        codegen.additionalProperties().put(PhpLaravelServerCodegen.USE_ONE_OF_INTERFACES, "true");
+        codegen.processOpts();
+        assertTrue(codegen.getUseOneOfInterfaces());
+    }
+
+    @Test
+    public void shouldGenerateInterfacesForDiscriminatedOneOfWhenEnabled() throws Exception {
+        Map<String, Path> models = generateOneOfInterfacesSpec(Map.of(PhpLaravelServerCodegen.USE_ONE_OF_INTERFACES, "true"));
+
+        TestUtils.assertFileContains(models.get("OwnerPet.php"),
+                "#[Serde\\StaticTypeMap(key: 'pet_type', map: [\n    'cat' => Cat::class,\n    'dog' => Dog::class,\n])]\ninterface OwnerPet\n{\n}");
+        TestUtils.assertFileContains(models.get("Owner.php"), "public \\OpenAPI\\Server\\Model\\OwnerPet $pet,");
+        TestUtils.assertFileContains(models.get("Cat.php"), "class Cat implements OwnerPet, Pet\n");
+        TestUtils.assertFileContains(models.get("Dog.php"), "class Dog implements OwnerPet, Pet\n");
+
+        TestUtils.assertFileContains(models.get("Shape.php"), "'circle' => Circle::class,", "interface Shape\n");
+        TestUtils.assertFileContains(models.get("Circle.php"), "class Circle implements Shape\n");
+
+        // without a discriminator mapping (legacyDiscriminatorBehavior=true) there is nothing to build a type map from
+        TestUtils.assertFileContains(models.get("Pet.php"), "interface Pet\n");
+        TestUtils.assertFileNotContains(models.get("Pet.php"), "StaticTypeMap");
+
+        // oneOf without a discriminator keeps the default class model
+        TestUtils.assertFileContains(models.get("OwnerNickname.php"), "class OwnerNickname\n");
+        TestUtils.assertFileNotContains(models.get("OwnerNickname.php"), "interface OwnerNickname");
+        TestUtils.assertFileNotContains(models.get("Cat.php"), "OwnerNickname");
+
+        // x-implements declared in the spec is not PHP specific and stays ignored
+        TestUtils.assertFileNotContains(models.get("Dog.php"), "java.io.Serializable");
+    }
+
+    @Test
+    public void shouldKeepOneOfAsClassWhenDisabled() throws Exception {
+        Map<String, Path> models = generateOneOfInterfacesSpec(new HashMap<>());
+
+        models.forEach((fileName, model) -> TestUtils.assertFileNotContains(model,
+                "interface " + fileName.replace(".php", ""), " implements ", "StaticTypeMap"));
+        TestUtils.assertFileContains(models.get("OwnerPet.php"), "class OwnerPet\n");
+    }
+
+    private Map<String, Path> generateOneOfInterfacesSpec(Map<String, Object> properties) throws Exception {
+        File output = Files.createTempDirectory("test").toFile();
+        output.deleteOnExit();
+
+        final CodegenConfigurator configurator = new CodegenConfigurator()
+                .setGeneratorName("php-laravel")
+                .setAdditionalProperties(properties)
+                .setInputSpec("src/test/resources/3_0/php-laravel/oneof-interfaces.yaml")
+                .setOutputDir(output.getAbsolutePath().replace("\\", "/"));
+
+        List<File> files = new DefaultGenerator().opts(configurator.toClientOptInput()).generate();
+
+        return files.stream()
+                .filter(file -> file.getParentFile().getName().equals("Model"))
+                .collect(Collectors.toMap(File::getName, File::toPath));
     }
 }
