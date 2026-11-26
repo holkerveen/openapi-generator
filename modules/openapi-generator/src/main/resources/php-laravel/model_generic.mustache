@@ -18,21 +18,50 @@ interface {{classname}}
 }
 {{/vendorExtensions.x-is-one-of-interface}}
 {{^vendorExtensions.x-is-one-of-interface}}
+{{#useInheritance}}
+{{#hasChildren}}
+{{#discriminator}}
+{{#mappedModels}}
+{{#-first}}
+#[Serde\StaticTypeMap(key: '{{{propertyBaseName}}}', map: [
+{{/-first}}
+    '{{{mappingName}}}' => {{modelName}}::class,
+{{#-last}}
+])]
+{{/-last}}
+{{/mappedModels}}
+{{/discriminator}}
+{{/hasChildren}}
+{{/useInheritance}}
 #[Serde\ClassSettings(renameWith: Cases::snake_case)]
-class {{classname}}{{#useOneOfInterfaces}}{{#vendorExtensions.x-implements}}{{#-first}} implements {{/-first}}{{{.}}}{{^-last}}, {{/-last}}{{/vendorExtensions.x-implements}}{{/useOneOfInterfaces}}
+class {{classname}}{{#useInheritance}}{{#parentModel}} extends {{classname}}{{/parentModel}}{{#vendorExtensions.x-implements}}{{#-first}} implements {{/-first}}{{{.}}}{{^-last}}, {{/-last}}{{/vendorExtensions.x-implements}}{{/useInheritance}}
 {
     /**
-    {{#vars}}
+    {{#allVars}}
     *
     * {{description}}
     {{#deprecated}}
     * @deprecated
     {{/deprecated}}
     * @param {{#isNullable}}null | {{/isNullable}}{{{dataType}}} ${{name}}
-    {{/vars}}
+    {{/allVars}}
     */
 
     public function __construct(
+    {{#useInheritance}}
+    {{#parentModel}}
+    {{#allVars}}
+    {{^isNullable}}
+    {{#isContainer}}
+        array ${{name}},
+    {{/isContainer}}
+    {{^isContainer}}
+        {{{dataType}}} ${{name}}{{#defaultValue}} = {{{defaultValue}}}{{/defaultValue}},
+    {{/isContainer}}
+    {{/isNullable}}
+    {{/allVars}}
+    {{/parentModel}}
+    {{/useInheritance}}
     {{#vars}}
     {{^isNullable}}
     {{#isContainer}}
@@ -43,6 +72,20 @@ class {{classname}}{{#useOneOfInterfaces}}{{#vendorExtensions.x-implements}}{{#-
     {{/isContainer}}
     {{/isNullable}}
     {{/vars}}
+    {{#useInheritance}}
+    {{#parentModel}}
+    {{#allVars}}
+    {{#isNullable}}
+    {{#isContainer}}
+        ?array ${{name}} = null,
+    {{/isContainer}}
+    {{^isContainer}}
+        ?{{{dataType}}} ${{name}}{{#defaultValue}} = {{{defaultValue}}}{{/defaultValue}}{{^defaultValue}} = null{{/defaultValue}},
+    {{/isContainer}}
+    {{/isNullable}}
+    {{/allVars}}
+    {{/parentModel}}
+    {{/useInheritance}}
     {{#vars}}
     {{#isNullable}}
     {{#isContainer}}
@@ -53,6 +96,8 @@ class {{classname}}{{#useOneOfInterfaces}}{{#vendorExtensions.x-implements}}{{#-
     {{/isContainer}}
     {{/isNullable}}
     {{/vars}}
-    ) {}
+    ){{#useInheritance}}{{#parentModel}} {
+        parent::__construct({{#allVars}}{{name}}: ${{name}}{{^-last}}, {{/-last}}{{/allVars}});
+    }{{/parentModel}}{{^parentModel}} {}{{/parentModel}}{{/useInheritance}}{{^useInheritance}} {}{{/useInheritance}}
 }
 {{/vendorExtensions.x-is-one-of-interface}}

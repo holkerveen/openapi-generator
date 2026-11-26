@@ -38,7 +38,7 @@ These options may be applied as additional-properties (cli) or configOptions (pl
 |sortModelPropertiesByRequiredFlag|Sort model properties to place required parameters before optional parameters.| |true|
 |sortParamsByRequiredFlag|Sort method arguments to place required parameters before optional parameters.| |true|
 |srcBasePath|The directory to serve as source root.| |null|
-|useOneOfInterfaces|Generate an interface for each oneOf schema with a discriminator, implemented by its member models and annotated with a crell/serde type map. oneOf schemas without a discriminator keep the default class model.| |false|
+|useInheritance|Use the discriminator to model composed schemas: a oneOf or anyOf schema becomes an interface implemented by its member models, and an allOf schema whose parent has a discriminator extends the parent class. The interface or parent class gets a crell/serde type map built from the discriminator mapping. Composed schemas without a discriminator keep the default flattened class model.| |false|
 |variableNamingConvention|naming convention of variable name, e.g. camelCase.|<dl><dt>**camelCase**</dt><dd>Use camelCase convention</dd><dt>**PascalCase**</dt><dd>Use PascalCase convention</dd><dt>**snake_case**</dt><dd>Use snake_case convention</dd><dt>**original**</dt><dd>Do not change the variable name</dd></dl>|snake_case|
 
 ## IMPORT MAPPING

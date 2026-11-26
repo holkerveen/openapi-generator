@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: php-laravel oneOf interfaces
+  title: php-laravel inheritance
   version: 1.0.0
 paths:
   /owners:
@@ -45,6 +45,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Shape'
+  /vehicles:
+    post:
+      operationId: createVehicle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Vehicle'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+  /payments:
+    post:
+      operationId: createPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Payment'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentNote'
 components:
   schemas:
     Owner:
@@ -132,3 +164,69 @@ components:
           $ref: '#/components/schemas/ShapeKind'
         side:
           type: number
+    Vehicle:
+      type: object
+      required:
+        - vehicle_type
+        - wheels
+      properties:
+        vehicle_type:
+          type: string
+        wheels:
+          type: integer
+      discriminator:
+        propertyName: vehicle_type
+        mapping:
+          car: '#/components/schemas/Car'
+          truck: '#/components/schemas/Truck'
+    Car:
+      allOf:
+        - $ref: '#/components/schemas/Vehicle'
+        - type: object
+          required:
+            - doors
+          properties:
+            doors:
+              type: integer
+    Truck:
+      allOf:
+        - $ref: '#/components/schemas/Vehicle'
+        - type: object
+          required:
+            - payload
+          properties:
+            payload:
+              type: number
+    Payment:
+      anyOf:
+        - $ref: '#/components/schemas/CardPayment'
+        - $ref: '#/components/schemas/BankTransfer'
+      discriminator:
+        propertyName: method
+        mapping:
+          card: '#/components/schemas/CardPayment'
+          transfer: '#/components/schemas/BankTransfer'
+    PaymentNote:
+      anyOf:
+        - $ref: '#/components/schemas/CardPayment'
+        - $ref: '#/components/schemas/BankTransfer'
+    CardPayment:
+      type: object
+      required:
+        - method
+        - card_number
+      properties:
+        method:
+          type: string
+        card_number:
+          type: string
+    BankTransfer:
+      type: object
+      required:
+        - method
+        - iban
+      properties:
+        method:
+          type: string
+        iban:
+          type: string

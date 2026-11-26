@@ -1,8 +1,8 @@
 generatorName: php-laravel
-outputDir: samples/server/petstore/php-laravel-oneof-interfaces
-inputSpec: modules/openapi-generator/src/test/resources/3_0/php-laravel/oneof-interfaces.yaml
+outputDir: samples/server/petstore/php-laravel-inheritance
+inputSpec: modules/openapi-generator/src/test/resources/3_0/php-laravel/inheritance.yaml
 templateDir: modules/openapi-generator/src/main/resources/php-laravel
 gitUserId: openapitools
 gitRepoId: petstore
 additionalProperties:
-  useOneOfInterfaces: true
+  useInheritance: true

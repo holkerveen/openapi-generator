@@ -76,21 +76,22 @@ public class PhpLaravelServerCodegenTest {
     }
 
     @Test
-    public void shouldParseUseOneOfInterfacesOptionDisabledByDefault() {
+    public void shouldParseUseInheritanceOptionDisabledByDefault() {
         PhpLaravelServerCodegen codegen = new PhpLaravelServerCodegen();
         codegen.processOpts();
         assertFalse(codegen.getUseOneOfInterfaces());
-        assertTrue(codegen.cliOptions().stream().anyMatch(option -> option.getOpt().equals(PhpLaravelServerCodegen.USE_ONE_OF_INTERFACES)));
+        assertTrue(codegen.cliOptions().stream().anyMatch(option -> option.getOpt().equals(PhpLaravelServerCodegen.USE_INHERITANCE)));
+        assertFalse(codegen.cliOptions().stream().anyMatch(option -> option.getOpt().equals("useOneOfInterfaces")));
 
         codegen = new PhpLaravelServerCodegen();
-        codegen.additionalProperties().put(PhpLaravelServerCodegen.USE_ONE_OF_INTERFACES, "true");
+        codegen.additionalProperties().put(PhpLaravelServerCodegen.USE_INHERITANCE, "true");
         codegen.processOpts();
         assertTrue(codegen.getUseOneOfInterfaces());
     }
 
     @Test
     public void shouldGenerateInterfacesForDiscriminatedOneOfWhenEnabled() throws Exception {
-        Map<String, Path> models = generateOneOfInterfacesSpec(Map.of(PhpLaravelServerCodegen.USE_ONE_OF_INTERFACES, "true"));
+        Map<String, Path> models = generateInheritanceSpec(Map.of(PhpLaravelServerCodegen.USE_INHERITANCE, "true"));
 
         TestUtils.assertFileContains(models.get("OwnerPet.php"),
                 "#[Serde\\StaticTypeMap(key: 'pet_type', map: [\n    'cat' => Cat::class,\n    'dog' => Dog::class,\n])]\ninterface OwnerPet\n{\n}");
@@ -115,22 +116,66 @@ public class PhpLaravelServerCodegenTest {
     }
 
     @Test
+    public void shouldGenerateInterfacesForDiscriminatedAnyOfWhenEnabled() throws Exception {
+        Map<String, Path> models = generateInheritanceSpec(Map.of(PhpLaravelServerCodegen.USE_INHERITANCE, "true"));
+
+        TestUtils.assertFileContains(models.get("Payment.php"),
+                "#[Serde\\StaticTypeMap(key: 'method', map: [\n    'card' => CardPayment::class,\n    'transfer' => BankTransfer::class,\n])]\ninterface Payment\n{\n}");
+        TestUtils.assertFileContains(models.get("CardPayment.php"), "class CardPayment implements Payment\n");
+        TestUtils.assertFileContains(models.get("BankTransfer.php"), "class BankTransfer implements Payment\n");
+
+        // anyOf without a discriminator keeps the default class model
+        TestUtils.assertFileContains(models.get("PaymentNote.php"), "class PaymentNote\n");
+        TestUtils.assertFileNotContains(models.get("CardPayment.php"), "PaymentNote");
+    }
+
+    @Test
+    public void shouldExtendDiscriminatedAllOfParentWhenEnabled() throws Exception {
+        Map<String, Path> models = generateInheritanceSpec(Map.of(PhpLaravelServerCodegen.USE_INHERITANCE, "true"));
+
+        TestUtils.assertFileContains(models.get("Vehicle.php"),
+                "#[Serde\\StaticTypeMap(key: 'vehicle_type', map: [\n    'car' => Car::class,\n    'truck' => Truck::class,\n])]\n#[Serde\\ClassSettings(renameWith: Cases::snake_case)]\nclass Vehicle\n");
+        TestUtils.assertFileContains(models.get("Car.php"),
+                "class Car extends Vehicle\n",
+                "    public function __construct(\n        string $vehicleType,\n        int $wheels,\n        public int $doors,\n    ) {\n        parent::__construct(vehicleType: $vehicleType, wheels: $wheels);\n    }");
+        TestUtils.assertFileNotContains(models.get("Car.php"), "public string $vehicleType", "StaticTypeMap");
+        TestUtils.assertFileContains(models.get("Truck.php"), "class Truck extends Vehicle\n", "public float $payload,");
+    }
+
+    @Test
+    public void shouldNotExtendOneOfInterfaceReferencedByAllOf() throws Exception {
+        Map<String, Path> models = generateSpec("src/test/resources/3_0/php-laravel/inheritance-cyclic.yaml",
+                Map.of(PhpLaravelServerCodegen.USE_INHERITANCE, "true"));
+
+        TestUtils.assertFileContains(models.get("Pet.php"), "interface Pet\n");
+        TestUtils.assertFileContains(models.get("Cat.php"),
+                "class Cat implements Pet\n",
+                "        public string $petType,\n        public bool $meow,\n    ) {}");
+        TestUtils.assertFileNotContains(models.get("Cat.php"), " extends ", "parent::__construct", "$bark");
+        TestUtils.assertFileContains(models.get("Dog.php"), "class Dog implements Pet\n");
+    }
+
+    @Test
     public void shouldKeepOneOfAsClassWhenDisabled() throws Exception {
-        Map<String, Path> models = generateOneOfInterfacesSpec(new HashMap<>());
+        Map<String, Path> models = generateInheritanceSpec(new HashMap<>());
 
         models.forEach((fileName, model) -> TestUtils.assertFileNotContains(model,
-                "interface " + fileName.replace(".php", ""), " implements ", "StaticTypeMap"));
+                "interface " + fileName.replace(".php", ""), " implements ", " extends ", "StaticTypeMap", "parent::__construct"));
         TestUtils.assertFileContains(models.get("OwnerPet.php"), "class OwnerPet\n");
     }
 
-    private Map<String, Path> generateOneOfInterfacesSpec(Map<String, Object> properties) throws Exception {
+    private Map<String, Path> generateInheritanceSpec(Map<String, Object> properties) throws Exception {
+        return generateSpec("src/test/resources/3_0/php-laravel/inheritance.yaml", properties);
+    }
+
+    private Map<String, Path> generateSpec(String inputSpec, Map<String, Object> properties) throws Exception {
         File output = Files.createTempDirectory("test").toFile();
         output.deleteOnExit();
 
         final CodegenConfigurator configurator = new CodegenConfigurator()
                 .setGeneratorName("php-laravel")
                 .setAdditionalProperties(properties)
-                .setInputSpec("src/test/resources/3_0/php-laravel/oneof-interfaces.yaml")
+                .setInputSpec(inputSpec)
                 .setOutputDir(output.getAbsolutePath().replace("\\", "/"));
 
         List<File> files = new DefaultGenerator().opts(configurator.toClientOptInput()).generate();

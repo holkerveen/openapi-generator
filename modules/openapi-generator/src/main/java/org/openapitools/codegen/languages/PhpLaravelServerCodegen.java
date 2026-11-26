@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -39,7 +40,7 @@ import static org.openapitools.codegen.utils.StringUtils.camelize;
  */
 public class PhpLaravelServerCodegen extends AbstractPhpCodegen implements CodegenConfig {
     private static final String AUTOWIRE = "autowire";
-    public static final String USE_ONE_OF_INTERFACES = "useOneOfInterfaces";
+    public static final String USE_INHERITANCE = "useInheritance";
     private final Logger LOGGER = LoggerFactory.getLogger(PhpLaravelServerCodegen.class);
 
     public CodegenType getTag() {
@@ -91,14 +92,17 @@ public class PhpLaravelServerCodegen extends AbstractPhpCodegen implements Codeg
         languageSpecificPrimitives.add("\\Illuminate\\Http\\UploadedFile");
 
         cliOptions.add(new CliOption(AUTOWIRE, "Should autowire be enabled.").defaultValue("false"));
-        cliOptions.add(CliOption.newBoolean(USE_ONE_OF_INTERFACES, "Generate an interface for each oneOf schema with a discriminator, implemented by its member models and annotated with a crell/serde type map. oneOf schemas without a discriminator keep the default class model.", useOneOfInterfaces));
+        cliOptions.add(CliOption.newBoolean(USE_INHERITANCE, "Use the discriminator to model composed schemas: a oneOf or anyOf schema becomes an interface implemented by its member models, and an allOf schema whose parent has a discriminator extends the parent class. The interface or parent class gets a crell/serde type map built from the discriminator mapping. Composed schemas without a discriminator keep the default flattened class model.", false));
     }
 
     @Override
     public void processOpts() {
         super.processOpts();
 
-        convertPropertyToBooleanAndWriteBack(USE_ONE_OF_INTERFACES, this::setUseOneOfInterfaces);
+        convertPropertyToBooleanAndWriteBack(USE_INHERITANCE, useInheritance -> {
+            setUseOneOfInterfaces(useInheritance);
+            supportsInheritance = useInheritance;
+        });
         vendorExtensions.put("x-autowire", additionalProperties.getOrDefault(AUTOWIRE, "false").equals("true"));
 
         supportingFiles.add(new SupportingFile("routes.mustache", routesDirectory, routesFileName));
@@ -162,9 +166,35 @@ public class PhpLaravelServerCodegen extends AbstractPhpCodegen implements Codeg
     public Map<String, ModelsMap> postProcessAllModels(Map<String, ModelsMap> objs) {
         Map<String, ModelsMap> result = super.postProcessAllModels(objs);
         if (useOneOfInterfaces) {
+            addDiscriminatedAnyOfInterfaces(result);
             keepOnlyDiscriminatedOneOfInterfaces(result);
         }
         return result;
+    }
+
+    private void addDiscriminatedAnyOfInterfaces(Map<String, ModelsMap> objs) {
+        Map<String, CodegenModel> models = objs.values().stream()
+                .flatMap(modelsMap -> modelsMap.getModels().stream())
+                .map(ModelMap::getModel)
+                .collect(Collectors.toMap(model -> model.classname, model -> model, (first, second) -> first));
+
+        for (CodegenModel model : models.values()) {
+            if (model.discriminator == null || model.anyOf.isEmpty() || !model.oneOf.isEmpty()) {
+                continue;
+            }
+            model.vendorExtensions.put(X_IS_ONE_OF_INTERFACE, true);
+            for (String member : model.anyOf) {
+                CodegenModel implementor = models.get(member);
+                if (implementor == null) {
+                    continue;
+                }
+                List<Object> implemented = new ArrayList<>(declaredInterfaces(implementor));
+                if (!implemented.contains(model.classname)) {
+                    implemented.add(model.classname);
+                }
+                implementor.vendorExtensions.put(X_IMPLEMENTS, implemented);
+            }
+        }
     }
 
     private void keepOnlyDiscriminatedOneOfInterfaces(Map<String, ModelsMap> objs) {
@@ -185,18 +215,32 @@ public class PhpLaravelServerCodegen extends AbstractPhpCodegen implements Codeg
         }
 
         for (CodegenModel model : models) {
-            Object implemented = model.vendorExtensions.get(X_IMPLEMENTS);
-            if (implemented == null) {
+            // a PHP class cannot extend an interface: a member that also allOf-references its oneOf/anyOf
+            // only implements it and keeps its own properties
+            if (model.parentModel != null && interfaces.contains(model.parentModel.classname)) {
+                model.parent = null;
+                model.parentSchema = null;
+                model.parentModel = null;
+                model.allVars = new ArrayList<>(model.vars);
+            }
+            if (!model.vendorExtensions.containsKey(X_IMPLEMENTS)) {
                 continue;
             }
-            Collection<?> declared = implemented instanceof Collection ? (Collection<?>) implemented : Collections.singletonList(implemented);
-            List<Object> retained = declared.stream().filter(interfaces::contains).collect(Collectors.toList());
+            List<Object> retained = declaredInterfaces(model).stream().filter(interfaces::contains).collect(Collectors.toList());
             if (retained.isEmpty()) {
                 model.vendorExtensions.remove(X_IMPLEMENTS);
             } else {
                 model.vendorExtensions.put(X_IMPLEMENTS, retained);
             }
         }
+    }
+
+    private static Collection<?> declaredInterfaces(CodegenModel model) {
+        Object implemented = model.vendorExtensions.get(X_IMPLEMENTS);
+        if (implemented == null) {
+            return Collections.emptyList();
+        }
+        return implemented instanceof Collection ? (Collection<?>) implemented : Collections.singletonList(implemented);
     }
 
     @Override
